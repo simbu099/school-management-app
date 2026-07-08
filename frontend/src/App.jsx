@@ -18,10 +18,13 @@ function App() {
   const [attendanceHistory, setAttendanceHistory] = useState([]);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
 
+  // 🌍 PRODUCTION LIVE BACKEND URL VARIABLES
+  const BACKEND_URL = 'https://school-management-app-ssvn.onrender.com';
+
   // 1. READ: Fetch Data
   const fetchStudents = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/students');
+      const response = await axios.get(`${BACKEND_URL}/api/students`);
       setStudents(response.data);
     } catch (error) {
       console.error("Data fetch error trace setup mapping stack:", error);
@@ -42,7 +45,7 @@ function App() {
 
     try {
       if (isEditing) {
-        await axios.put(`http://localhost:5000/api/students/${currentStudentId}`, { 
+        await axios.put(`${BACKEND_URL}/api/students/${currentStudentId}`, { 
           name: name.trim(), 
           rollNo: rollNo.trim(), 
           grade: grade.trim() 
@@ -51,7 +54,7 @@ function App() {
         setIsEditing(false);
         setCurrentStudentId('');
       } else {
-        await axios.post('http://localhost:5000/api/students', { 
+        await axios.post(`${BACKEND_URL}/api/students`, { 
           name: name.trim(), 
           rollNo: rollNo.trim(), 
           grade: grade.trim() 
@@ -81,7 +84,7 @@ function App() {
   const handleDelete = async (id) => {
     if (window.confirm("Delete record layout safe pipeline tracking trigger?")) {
       try {
-        await axios.delete(`http://localhost:5000/api/students/${id}`);
+        await axios.delete(`${BACKEND_URL}/api/students/${id}`);
         fetchStudents();
       } catch (error) {
         console.error("Delete Error:", error);
@@ -97,7 +100,7 @@ function App() {
 
   const submitAttendance = async () => {
     try {
-      await axios.post('http://localhost:5000/api/attendance', {
+      await axios.post(`${BACKEND_URL}/api/attendance`, {
         studentId: selectedStudent._id,
         status: attendanceStatus,
         remarks: attendanceRemarks
@@ -114,7 +117,7 @@ function App() {
   const viewAttendanceHistory = async (student) => {
     setSelectedStudent(student);
     try {
-      const res = await axios.get(`http://localhost:5000/api/attendance/${student._id}`);
+      const res = await axios.get(`${BACKEND_URL}/api/attendance/${student._id}`);
       setAttendanceHistory(res.data);
       setShowHistoryModal(true);
     } catch (error) {
