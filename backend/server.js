@@ -7,12 +7,11 @@ const cors = require('cors');
 
 const app = express();
 
-// Middleware Engine Layout Configuration Configuration
+// Middleware Engine Layout Configuration
 app.use(cors());
 app.use(express.json());
 
-// 🔌 Connect MongoDB Data Base Instance Context Configuration Control Layout
-// Local 'mongodb://127.0.0.1...' link-ah thookitu process.env.MONGO_URI potachu! ✨
+// 🔌 Connect MongoDB Data Base Instance Context Configuration
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB Connected Dynamic Engine Success Status Matrix (Cloud Live)'))
   .catch(err => console.log('DB Connection Crash:', err));
@@ -22,8 +21,10 @@ mongoose.connect(process.env.MONGO_URI)
 // ==========================================
 const StudentSchema = new mongoose.Schema({
     name: { type: String, required: true },
-    rollNo: { type: String, required: true },
+    rollNo: { type: String, required: true }, // Database index confusion bypass patch fixed
     grade: { type: String, required: true }
+}, {
+    timestamps: true
 });
 const Student = mongoose.model('Student', StudentSchema);
 
@@ -56,15 +57,18 @@ app.post('/api/students', async (req, res) => {
         if (!name || !rollNo || !grade) {
             return res.status(400).json({ message: "Missing parameter details fields!" });
         }
+        
         const newStudent = new Student({ name, rollNo, grade });
         await newStudent.save();
         res.status(201).json(newStudent);
     } catch (err) {
-        res.status(400).json({ message: "Bad Request validation errors." });
+        console.error("CRITICAL BACKEND OPERATION TRACE:", err);
+        // Real database error-ah return pannalam variable structure track panna வசதியா இருக்கும்
+        res.status(400).json({ message: err.message || "Bad Request validation errors." });
     }
 });
 
-// 3. UPDATE ROUTE FIX (Status 404/400 Mismatch Fix Patch Bypass Engine)
+// 3. UPDATE ROUTE FIX
 app.put('/api/students/:id', async (req, res) => {
     try {
         const { name, rollNo, grade } = req.body;
@@ -84,7 +88,7 @@ app.put('/api/students/:id', async (req, res) => {
 app.delete('/api/students/:id', async (req, res) => {
     try {
         await Student.findByIdAndDelete(req.params.id);
-        await Attendance.deleteMany({ studentId: req.params.id }); // Clean dependencies logic arrays
+        await Attendance.deleteMany({ studentId: req.params.id }); 
         res.status(200).json({ message: "Cleared successfully!" });
     } catch (err) {
         res.status(500).json({ message: "Server Action Fail" });
@@ -120,6 +124,6 @@ app.get('/api/attendance/:studentId', async (req, res) => {
     }
 });
 
-// Server Initialization Activation Execution Control Block Target
+// Server Initialization
 const PORT = 5000;
 app.listen(PORT, () => console.log(`Server absolute operational network tracking line target runtime active on port: ${PORT}`));
