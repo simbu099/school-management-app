@@ -18,14 +18,18 @@ function App() {
   const [attendanceHistory, setAttendanceHistory] = useState([]);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
 
-  // 🌍 PRODUCTION LIVE BACKEND URL VARIABLES
+  // 🌍 PRODUCTION LIVE BACKEND URL
   const BACKEND_URL = 'https://school-management-app-ssvn.onrender.com';
 
   // 1. READ: Fetch Data
   const fetchStudents = async () => {
     try {
       const response = await axios.get(`${BACKEND_URL}/api/students`);
-      setStudents(response.data);
+      if (response.data && Array.isArray(response.data)) {
+        setStudents(response.data);
+      } else {
+        setStudents([]);
+      }
     } catch (error) {
       console.error("Data fetch error trace setup mapping stack:", error);
     }
@@ -38,7 +42,13 @@ function App() {
   // 2. CREATE & UPDATE: Submit Handlers
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!name.trim() || !rollNo.trim() || !grade.trim()) {
+    
+    // Explicit string conversion to prevent variable empty crash layers
+    const finalName = String(name || '').trim();
+    const finalRollNo = String(rollNo || '').trim();
+    const finalGrade = String(grade || '').trim();
+
+    if (!finalName || !finalRollNo || !finalGrade) {
       alert("Fields cannot be empty boss!");
       return;
     }
@@ -46,22 +56,28 @@ function App() {
     try {
       if (isEditing) {
         await axios.put(`${BACKEND_URL}/api/students/${currentStudentId}`, { 
-          name: name.trim(), 
-          rollNo: rollNo.trim(), 
-          grade: grade.trim() 
+          name: finalName, 
+          rollNo: finalRollNo, 
+          grade: finalGrade 
         });
         alert("Updated successfully!");
         setIsEditing(false);
         setCurrentStudentId('');
       } else {
         await axios.post(`${BACKEND_URL}/api/students`, { 
-          name: name.trim(), 
-          rollNo: rollNo.trim(), 
-          grade: grade.trim() 
+          name: finalName, 
+          rollNo: finalRollNo, 
+          grade: finalGrade 
         });
         alert("Student registered successfully!");
       }
-      setName(''); setRollNo(''); setGrade('');
+      
+      // Clear inputs
+      setName(''); 
+      setRollNo(''); 
+      setGrade('');
+      
+      // Re-fetch pipeline update
       fetchStudents(); 
     } catch (error) {
       console.error("Submit Operation Error Log:", error);
@@ -73,12 +89,17 @@ function App() {
   const startEdit = (student) => {
     setIsEditing(true);
     setCurrentStudentId(student._id);
-    setName(student.name); setRollNo(student.rollNo); setGrade(student.grade);
+    setName(student.name || ''); 
+    setRollNo(student.rollNo || ''); 
+    setGrade(student.grade || '');
   };
 
   const cancelEdit = () => {
-    setIsEditing(false); setCurrentStudentId('');
-    setName(''); setRollNo(''); setGrade('');
+    setIsEditing(false); 
+    setCurrentStudentId('');
+    setName(''); 
+    setRollNo(''); 
+    setGrade('');
   };
 
   const handleDelete = async (id) => {
@@ -103,7 +124,7 @@ function App() {
       await axios.post(`${BACKEND_URL}/api/attendance`, {
         studentId: selectedStudent._id,
         status: attendanceStatus,
-        remarks: attendanceRemarks
+        remarks: String(attendanceRemarks || '').trim()
       });
       alert(`Attendance marked successfully!`);
       setShowAttendanceModal(false);
@@ -118,7 +139,7 @@ function App() {
     setSelectedStudent(student);
     try {
       const res = await axios.get(`${BACKEND_URL}/api/attendance/${student._id}`);
-      setAttendanceHistory(res.data);
+      setAttendanceHistory(res.data || []);
       setShowHistoryModal(true);
     } catch (error) {
       console.error("Fetch History Error:", error);
@@ -129,9 +150,21 @@ function App() {
   return (
     <>
       <AdminDashboard 
-        students={students} name={name} setName={setName} rollNo={rollNo} setRollNo={setRollNo} grade={grade} setGrade={setGrade}
-        isEditing={isEditing} handleSubmit={handleSubmit} startEdit={startEdit} cancelEdit={cancelEdit} handleDelete={handleDelete}
-        setSelectedStudent={handleSetSelectedStudentForAttendance} setShowAttendanceModal={setShowAttendanceModal} viewAttendanceHistory={viewAttendanceHistory}
+        students={students} 
+        name={name} 
+        setName={setName} 
+        rollNo={rollNo} 
+        setRollNo={setRollNo} 
+        grade={grade} 
+        setGrade={setGrade}
+        isEditing={isEditing} 
+        handleSubmit={handleSubmit} 
+        startEdit={startEdit} 
+        cancelEdit={cancelEdit} 
+        handleDelete={handleDelete}
+        setSelectedStudent={handleSetSelectedStudentForAttendance} 
+        setShowAttendanceModal={setShowAttendanceModal} 
+        viewAttendanceHistory={viewAttendanceHistory}
       />
 
       {/* MODAL 1: MARK ATTENDANCE INTERFACE PANEL */}
