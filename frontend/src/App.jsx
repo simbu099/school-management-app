@@ -1,8 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import AdminDashboard from './pages/AdminDashboard';
+import AuthPage from './AuthPage'; // Imported to secure the application entry point
 
 function App() {
+  // 🔐 Authentication and Profile Metrics Layers
+  const [currentUser, setCurrentUser] = useState(null);
+
+  // Existing App State Structures
   const [students, setStudents] = useState([]);
   const [name, setName] = useState('');
   const [rollNo, setRollNo] = useState('');
@@ -21,6 +26,15 @@ function App() {
   // 🌍 PRODUCTION LIVE BACKEND URL
   const BACKEND_URL = 'https://school-management-app-ssvn.onrender.com';
 
+  // 🔄 Auto Login Session Restore on Page Mount
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      // Bypasses verification check if a local token layer is already present
+      setCurrentUser({ email: 'verified-session' });
+    }
+  }, []);
+
   // 1. READ: Fetch Data
   const fetchStudents = async () => {
     try {
@@ -36,14 +50,16 @@ function App() {
   };
 
   useEffect(() => {
-    fetchStudents();
-  }, []);
+    // Only fire student data acquisition workflows if authentication layer matches active state
+    if (currentUser) {
+      fetchStudents();
+    }
+  }, [currentUser]);
 
   // 2. CREATE & UPDATE: Submit Handlers
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // Explicit string conversion to prevent variable empty crash layers
     const finalName = String(name || '').trim();
     const finalRollNo = String(rollNo || '').trim();
     const finalGrade = String(grade || '').trim();
@@ -72,12 +88,9 @@ function App() {
         alert("Student registered successfully!");
       }
       
-      // Clear inputs
       setName(''); 
       setRollNo(''); 
       setGrade('');
-      
-      // Re-fetch pipeline update
       fetchStudents(); 
     } catch (error) {
       console.error("Submit Operation Error Log:", error);
@@ -146,6 +159,11 @@ function App() {
       alert('Failed to fetch history logs.');
     }
   };
+
+  // Switch wrapper checking validation logic: verify panna thaan student app kulla ponum 🔒
+  if (!currentUser) {
+    return <AuthPage onLoginSuccess={(userProfileData) => setCurrentUser(userProfileData)} />;
+  }
 
   return (
     <>
