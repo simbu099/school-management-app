@@ -30,7 +30,6 @@ mongoose.connect(process.env.MONGO_URI)
 // 🔒 ROLE-BASED SYSTEM AUTHENTICATION
 // ==========================================
 
-// 1. STRAIGHTFORWARD SIGNUP (No OTP)
 app.post('/api/auth/signup', async (req, res) => {
     try {
         const { name, phone, email, password, role, studentRollNo } = req.body;
@@ -64,7 +63,6 @@ app.post('/api/auth/signup', async (req, res) => {
     }
 });
 
-// 2. SECURE LOGIN ROUTE
 app.post('/api/auth/login', async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -75,7 +73,6 @@ app.post('/api/auth/login', async (req, res) => {
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) return res.status(400).json({ message: "Invalid credentials match patterns." });
 
-        // Generate JWT Token filled with role-based claim attributes
         const token = jwt.sign(
             { id: user._id, role: user.role, studentRollNo: user.studentRollNo }, 
             process.env.JWT_SECRET || 'fallback_secret', 
@@ -158,7 +155,8 @@ app.put('/api/students/:id', verifyToken, requireRole(['admin']), async (req, re
 app.delete('/api/students/:id', verifyToken, requireRole(['admin']), async (req, res) => {
     try {
         await Student.findByIdAndDelete(req.params.id);
-        await Attendance.deleteMany({ studentId: req.params.id }); 
+        // FIXED: Dropping all matching records using 'student' instead of studentId
+        await Attendance.deleteMany({ student: req.params.id }); 
         res.status(200).json({ message: "Student record purged successfully." });
     } catch (err) {
         res.status(500).json({ message: "Server action failed." });
@@ -166,23 +164,39 @@ app.delete('/api/students/:id', verifyToken, requireRole(['admin']), async (req,
 });
 
 // ==========================================
-// 📅 ATTENDANCE ENGINE (ADMIN ONLY)
+// 📅 ATTENDANCE ENGINE (ADMIN ONLY) - FIXED SCHEMA ALIGNMENT
 // ==========================================
 
 app.post('/api/attendance', verifyToken, requireRole(['admin']), async (req, res) => {
     try {
-        const { studentId, status, remarks } = req.body;
-        const newLog = new Attendance({ studentId, status, remarks });
+        // FIXED: Reading fields from frontend sync parameter tracking map block logic
+        const { student, status, remarks } = req.body;
+        
+        // Formulate clear clean tracking index to bypass composite timestamp variations
+        const startOfDay = new Date();
+        startOfDay.setHours(0,0,0,0);
+        const endOfDay = new Date();
+        endOfDay.setHours(23,59,59,999);
+
+        // Remove if duplicate exists on exact same tracking date window to avoid 400 unique clash index
+        await Attendance.deleteMany({
+            student: student,
+            date: { $gte: startOfDay, $lte: endOfDay }
+        });
+
+        const newLog = new Attendance({ student, status, remarks });
         await newLog.save();
         res.status(201).json(newLog);
     } catch (err) {
+        console.error("ATTENDANCE LOG ERROR:", err);
         res.status(400).json({ message: "Failed logging attendance metadata entry." });
     }
 });
 
 app.get('/api/attendance/:studentId', verifyToken, requireRole(['admin']), async (req, res) => {
     try {
-        const history = await Attendance.find({ studentId: req.params.studentId }).sort({ date: -1 });
+        // FIXED: Query updated from studentId object layer tracking map to student key
+        const history = await Attendance.find({ student: req.params.studentId }).sort({ date: -1 });
         res.status(200).json(history);
     } catch (err) {
         res.status(500).json({ message: "Failed fetching student attendance history logs." });
@@ -190,10 +204,19 @@ app.get('/api/attendance/:studentId', verifyToken, requireRole(['admin']), async
 });
 
 // ==========================================
-// 📝 ACADEMIC MARKS CONTROL (ADMIN / TEACHER MAPPING)
+// 📝 ACADEMIC MARKS CONTROL
 // ==========================================
 
-// Add or update student marks
+// FIXED: Added Global GET Endpoint for Admin Dashboard visibility
+app.get('/api/marks', verifyToken, requireRole(['admin']), async (req, res) => {
+    try {
+        const marksData = await Mark.find();
+        res.status(200).json(marksData);
+    } catch (err) {
+        res.status(500).json({ message: "Error loading structural grade ledger matrices." });
+    }
+});
+
 app.post('/api/marks/add', verifyToken, requireRole(['admin']), async (req, res) => {
     try {
         const { studentRollNo, subject, examType, marksObtained, maxMarks, remarks } = req.body;
@@ -206,10 +229,19 @@ app.post('/api/marks/add', verifyToken, requireRole(['admin']), async (req, res)
 });
 
 // ==========================================
-// 💳 FINANCE & FEES MANAGEMENT (ADMIN ONLY)
+// 💳 FINANCE & FEES MANAGEMENT 
 // ==========================================
 
-// Create a structural fee entry bill
+// FIXED: Added Global GET Endpoint for Fees Admin View visibility
+app.get('/api/fees', verifyToken, requireRole(['admin']), async (req, res) => {
+    try {
+        const feesData = await Fee.find();
+        res.status(200).json(feesData);
+    } catch (err) {
+        res.status(500).json({ message: "Error loading system fee invoice indexes." });
+    }
+});
+
 app.post('/api/fees/create', verifyToken, requireRole(['admin']), async (req, res) => {
     try {
         const { studentRollNo, termName, amountDue, amountPaid, status, dueDate } = req.body;
@@ -225,10 +257,8 @@ app.post('/api/fees/create', verifyToken, requireRole(['admin']), async (req, re
 // 👪 STUDENT & PARENT REAL-TIME VIEW GATEWAYS
 // ==========================================
 
-// Fetches structural profile data, attendance history, academic report cards, and balance statements
 app.get('/api/portal/dashboard/:rollNo', verifyToken, requireRole(['student', 'parent', 'admin']), async (req, res) => {
     try {
-        // Security check: Students/Parents can only read data associated with their own studentRollNo
         if (req.user.role !== 'admin' && req.user.studentRollNo !== req.params.rollNo) {
             return res.status(403).json({ message: "Unauthorized dashboard view matching violation context." });
         }
@@ -236,8 +266,7 @@ app.get('/api/portal/dashboard/:rollNo', verifyToken, requireRole(['student', 'p
         const studentProfile = await Student.findOne({ rollNo: req.params.rollNo });
         if (!studentProfile) return res.status(404).json({ message: "Student record details missing." });
 
-        // Run parallel queries across all features mapped to this unique student
-        const attendanceLogs = await Attendance.find({ studentId: studentProfile._id }).sort({ date: -1 });
+        const attendanceLogs = await Attendance.find({ student: studentProfile._id }).sort({ date: -1 });
         const academicMarks = await Mark.find({ studentRollNo: req.params.rollNo });
         const financialFees = await Fee.find({ studentRollNo: req.params.rollNo });
 
