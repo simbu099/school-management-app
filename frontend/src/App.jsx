@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import AuthPage from './AuthPage';
 import AdminDashboard from './pages/AdminDashboard';
-import AuthPage from './AuthPage'; // Imported to secure the application entry point
+import StudentDashboard from './components/StudentDashboard'; // Import the shared non-admin view layout
 
 function App() {
-  // 🔐 Authentication and Profile Metrics Layers
-  const [currentUser, setCurrentUser] = useState(null);
+  // 🔐 Authentication and Portal Session Layers
+  const [token, setToken] = useState(localStorage.getItem('token') || null);
+  const [currentUser, setCurrentUser] = useState(JSON.parse(localStorage.getItem('user')) || null);
 
-  // Existing App State Structures
+  // Existing App State Structures (Used by Admin Dashboard views)
   const [students, setStudents] = useState([]);
   const [name, setName] = useState('');
   const [rollNo, setRollNo] = useState('');
@@ -24,21 +26,28 @@ function App() {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
 
   // 🌍 PRODUCTION LIVE BACKEND URL
-  const BACKEND_URL = 'https://school-management-app-ssvn.onrender.com';
+  const BACKEND_URL = 'http://localhost:5000';
+
+  // 🛡️ Helper function to retrieve secure authorization config headers
+  const getAuthConfig = () => {
+    return { headers: { Authorization: `Bearer ${token}` } };
+  };
 
   // 🔄 Auto Login Session Restore on Page Mount
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      // Bypasses verification check if a local token layer is already present
-      setCurrentUser({ email: 'verified-session' });
+    const savedToken = localStorage.getItem('token');
+    const savedUser = localStorage.getItem('user');
+    if (savedToken && savedUser) {
+      setToken(savedToken);
+      setCurrentUser(JSON.parse(savedUser));
     }
   }, []);
 
-  // 1. READ: Fetch Data
+  // 1. READ: Fetch Data (Restricted strictly to 'admin' roles)
   const fetchStudents = async () => {
+    if (!token || currentUser?.role !== 'admin') return;
     try {
-      const response = await axios.get(`${BACKEND_URL}/api/students`);
+      const response = await axios.get(`${BACKEND_URL}/api/students`, getAuthConfig());
       if (response.data && Array.isArray(response.data)) {
         setStudents(response.data);
       } else {
@@ -50,11 +59,24 @@ function App() {
   };
 
   useEffect(() => {
-    // Only fire student data acquisition workflows if authentication layer matches active state
-    if (currentUser) {
+    if (currentUser && currentUser.role === 'admin') {
       fetchStudents();
     }
-  }, [currentUser]);
+  }, [currentUser, token]);
+
+  // 🔑 Handle Session Login Clearances
+  const handleLoginSuccess = (userToken, userData) => {
+    setToken(userToken);
+    setCurrentUser(userData);
+    localStorage.setItem('token', userToken);
+    localStorage.setItem('user', JSON.stringify(userData));
+  };
+
+  const handleLogout = () => {
+    setToken(null);
+    setCurrentUser(null);
+    localStorage.clear();
+  };
 
   // 2. CREATE & UPDATE: Submit Handlers
   const handleSubmit = async (e) => {
@@ -75,7 +97,7 @@ function App() {
           name: finalName, 
           rollNo: finalRollNo, 
           grade: finalGrade 
-        });
+        }, getAuthConfig());
         alert("Updated successfully!");
         setIsEditing(false);
         setCurrentStudentId('');
@@ -84,7 +106,7 @@ function App() {
           name: finalName, 
           rollNo: finalRollNo, 
           grade: finalGrade 
-        });
+        }, getAuthConfig());
         alert("Student registered successfully!");
       }
       
@@ -118,7 +140,7 @@ function App() {
   const handleDelete = async (id) => {
     if (window.confirm("Delete record layout safe pipeline tracking trigger?")) {
       try {
-        await axios.delete(`${BACKEND_URL}/api/students/${id}`);
+        await axios.delete(`${BACKEND_URL}/api/students/${id}`, getAuthConfig());
         fetchStudents();
       } catch (error) {
         console.error("Delete Error:", error);
@@ -138,7 +160,7 @@ function App() {
         studentId: selectedStudent._id,
         status: attendanceStatus,
         remarks: String(attendanceRemarks || '').trim()
-      });
+      }, getAuthConfig());
       alert(`Attendance marked successfully!`);
       setShowAttendanceModal(false);
       setAttendanceRemarks('');
@@ -151,7 +173,7 @@ function App() {
   const viewAttendanceHistory = async (student) => {
     setSelectedStudent(student);
     try {
-      const res = await axios.get(`${BACKEND_URL}/api/attendance/${student._id}`);
+      const res = await axios.get(`${BACKEND_URL}/api/attendance/${student._id}`, getAuthConfig());
       setAttendanceHistory(res.data || []);
       setShowHistoryModal(true);
     } catch (error) {
@@ -160,13 +182,30 @@ function App() {
     }
   };
 
-  // Switch wrapper checking validation logic: verify panna thaan student app kulla ponum 🔒
-  if (!currentUser) {
-    return <AuthPage onLoginSuccess={(userProfileData) => setCurrentUser(userProfileData)} />;
+  // 🛑 Switch context layout to AuthPage if user layer session is clean/empty
+  if (!token || !currentUser) {
+    return <AuthPage onLoginSuccess={handleLoginSuccess} />;
   }
 
+  // 🔀 DYNAMIC ROLE-BASED DASHBOARD CLEARANCES ROUTER
+  if (currentUser.role === 'student' || currentUser.role === 'parent') {
+    return (
+      <StudentDashboard 
+        token={token} 
+        user={currentUser} 
+        onLogout={handleLogout} 
+      />
+    );
+  }
+
+  // Otherwise, render full School System Admin layouts
   return (
     <>
+      <div className="container-fluid bg-light py-2 px-4 d-flex justify-content-between align-items-center border-bottom shadow-sm">
+        <span className="text-muted small">Logged in as: <strong>{currentUser.email} (Admin)</strong></span>
+        <button className="btn btn-sm btn-outline-danger" onClick={handleLogout}>Secure Logout</button>
+      </div>
+
       <AdminDashboard 
         students={students} 
         name={name} 
