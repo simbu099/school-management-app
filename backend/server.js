@@ -1,4 +1,3 @@
-// 1. File-oda top-laye .env configuration-ah active panna vendum 🚀
 require('dotenv').config(); 
 
 const express = require('express');
@@ -7,53 +6,37 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-// Load custom modules
+// Import Custom Models
 const User = require('./models/User'); 
-const { sendOTPEmail } = require('./config/mailer');
+const Student = require('./models/Student');
+const Attendance = require('./models/Attendance');
+
+// New Real-time Modules Models
+const Mark = require('./models/Mark');
+const Fee = require('./models/Fee');
 
 const app = express();
 
-// Middleware Engine Layout Configuration
+// Middleware Engine
 app.use(cors());
 app.use(express.json());
 
-// 🔌 Connect MongoDB Data Base Instance Context Configuration
+// Connect MongoDB Database Instance 
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB Connected Dynamic Engine Success Status Matrix (Cloud Live)'))
-  .catch(err => console.log('DB Connection Crash:', err));
+  .then(() => console.log('MongoDB Connected Successfully (Cloud Live)'))
+  .catch(err => console.error('DB Connection Error:', err));
 
 // ==========================================
-// 📋 DATABASE SCHEMA MODELS LAYER STRUCTURE
-// ==========================================
-const StudentSchema = new mongoose.Schema({
-    name: { type: String, required: true },
-    rollNo: { type: String, required: true }, 
-    grade: { type: String, required: true }
-}, {
-    timestamps: true
-});
-const Student = mongoose.model('Student', StudentSchema);
-
-const AttendanceSchema = new mongoose.Schema({
-    studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Student', required: true },
-    status: { type: String, enum: ['Present', 'Absent', 'Leave'], required: true },
-    remarks: { type: String, default: '' },
-    date: { type: Date, default: Date.now }
-});
-const Attendance = mongoose.model('Attendance', AttendanceSchema);
-
-
-// ==========================================
-// 🔒 STUDENT PORTAL AUTHENTICATION GATEWAY CONTROL
+// 🔒 ROLE-BASED SYSTEM AUTHENTICATION
 // ==========================================
 
-// 1. SIGNUP & SEND OTP ROUTE
+// 1. STRAIGHTFORWARD SIGNUP (No OTP)
 app.post('/api/auth/signup', async (req, res) => {
     try {
-        const { name, phone, email, dob, password } = req.body;
+        const { name, phone, email, password, role, studentRollNo } = req.body;
         
-        if(!name || !phone || !email || !dob || !password) {
-            return res.status(400).json({ message: "All sign up parameters details are required!" });
+        if(!name || !phone || !email || !password || !role) {
+            return res.status(400).json({ message: "All authentication details are required!" });
         }
 
         let userExists = await User.findOne({ email });
@@ -64,187 +47,211 @@ app.post('/api/auth/signup', async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        // Generate a clean 6-digit random code string
-        const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
-        const otpExpiryTime = new Date(Date.now() + 10 * 60 * 1000); // 10 Min target life trace
-
         const newUser = new User({
             name,
             phone,
             email,
-            dob,
             password: hashedPassword,
-            otp: generatedOtp,
-            otpExpires: otpExpiryTime
+            role,
+            studentRollNo: (role === 'student' || role === 'parent') ? studentRollNo : null
         });
 
         await newUser.save();
-        await sendOTPEmail(email, generatedOtp);
-
-        res.status(201).json({ message: "Registration initiated! Check mail for validation OTP code status." });
+        res.status(201).json({ message: "Account created successfully! You can now log in." });
     } catch (err) {
-        console.error("SIGNUP ENGINE ERROR:", err);
-        res.status(500).json({ message: "Internal server structural faults on registration." });
+        console.error("SIGNUP ERROR:", err);
+        res.status(500).json({ message: "Internal server error during registration." });
     }
 });
 
-// 2. VERIFY REGISTERED OTP ROUTE
-app.post('/api/auth/verify-otp', async (req, res) => {
-    try {
-        const { email, otp } = req.body;
-
-        const targetUser = await User.findOne({ email });
-        if (!targetUser) return res.status(404).json({ message: "Target authentication profile trace missing!" });
-
-        if (targetUser.isVerified) {
-            return res.status(400).json({ message: "Profile already validated successfully." });
-        }
-
-        if (targetUser.otp !== otp || new Date() > targetUser.otpExpires) {
-            return res.status(400).json({ message: "Invalid or expired OTP verification string matched." });
-        }
-
-        targetUser.isVerified = true;
-        targetUser.otp = undefined;
-        targetUser.otpExpires = undefined;
-        await targetUser.save();
-
-        const token = jwt.sign({ id: targetUser._id }, process.env.JWT_SECRET || 'fallback_secret', { expiresIn: '1d' });
-
-        res.status(200).json({ 
-            message: "Successfully logged in! Your student record access token generated.",
-            token,
-            user: { name: targetUser.name, email: targetUser.email }
-        });
-    } catch (err) {
-        res.status(500).json({ message: "Verification processing failed." });
-    }
-});
-
-// 3. SECURE LOGIN ROUTE WITH ACCESS CHECK
+// 2. SECURE LOGIN ROUTE
 app.post('/api/auth/login', async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        const verifiedUser = await User.findOne({ email });
-        if (!verifiedUser) return res.status(400).json({ message: "Invalid access criteria match patterns." });
+        const user = await User.findOne({ email });
+        if (!user) return res.status(400).json({ message: "Invalid credentials match patterns." });
 
-        const isMatch = await bcrypt.compare(password, verifiedUser.password);
-        if (!isMatch) return res.status(400).json({ message: "Invalid access criteria match patterns." });
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) return res.status(400).json({ message: "Invalid credentials match patterns." });
 
-        // verify panna than student app kulla ponum validation patch check
-        if (!verifiedUser.isVerified) {
-            const freshOtp = Math.floor(100000 + Math.random() * 900000).toString();
-            verifiedUser.otp = freshOtp;
-            verifiedUser.otpExpires = new Date(Date.now() + 10 * 60 * 1000);
-            await verifiedUser.save();
-            await sendOTPEmail(email, freshOtp);
-
-            return res.status(403).json({ 
-                message: "Verify panna thaan student app kulla ponum! A new validation code sent.",
-                requiresVerification: true 
-            });
-        }
-
-        const token = jwt.sign({ id: verifiedUser._id }, process.env.JWT_SECRET || 'fallback_secret', { expiresIn: '1d' });
+        // Generate JWT Token filled with role-based claim attributes
+        const token = jwt.sign(
+            { id: user._id, role: user.role, studentRollNo: user.studentRollNo }, 
+            process.env.JWT_SECRET || 'fallback_secret', 
+            { expiresIn: '1d' }
+        );
+        
         res.status(200).json({ 
             message: "Login Successful",
             token, 
-            user: { name: verifiedUser.name, email: verifiedUser.email } 
+            user: { 
+                name: user.name, 
+                email: user.email, 
+                role: user.role,
+                studentRollNo: user.studentRollNo
+            } 
         });
     } catch (err) {
         res.status(500).json({ message: "Login processing routine failure." });
     }
 });
 
+// ==========================================
+// 🛠️ AUTHORIZATION MIDDLEWARE
+// ==========================================
+const verifyToken = (req, res, next) => {
+    const token = req.headers['authorization']?.split(' ')[1];
+    if (!token) return res.status(401).json({ message: "Access Denied. Missing Token." });
+
+    try {
+        const verified = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
+        req.user = verified;
+        next();
+    } catch (err) {
+        res.status(400).json({ message: "Invalid Token Schema" });
+    }
+};
+
+const requireRole = (roles) => {
+    return (req, res, next) => {
+        if (!roles.includes(req.user.role)) {
+            return res.status(403).json({ message: "Access forbidden. Unauthorized portal clearance level." });
+        }
+        next();
+    };
+};
 
 // ==========================================
-// 🚀 REST API CORE ROUTERS CONTROLLERS CORE
+// 🚀 ADMIN CONTROL PIPELINES (CRUD)
 // ==========================================
 
-// 1. READ ALL STUDENTS
-app.get('/api/students', async (req, res) => {
+app.get('/api/students', verifyToken, requireRole(['admin']), async (req, res) => {
     try {
         const data = await Student.find();
         res.status(200).json(data);
     } catch (err) {
-        res.status(500).json({ message: "Internal Server Errors" });
+        res.status(500).json({ message: "Internal Server Error" });
     }
 });
 
-// 2. CREATE NEW STUDENT REGISTER
-app.post('/api/students', async (req, res) => {
+app.post('/api/students', verifyToken, requireRole(['admin']), async (req, res) => {
     try {
         const { name, rollNo, grade } = req.body;
-        if (!name || !rollNo || !grade) {
-            return res.status(400).json({ message: "Missing parameter details fields!" });
-        }
-        
         const newStudent = new Student({ name, rollNo, grade });
         await newStudent.save();
         res.status(201).json(newStudent);
     } catch (err) {
-        console.error("CRITICAL BACKEND OPERATION TRACE:", err);
-        res.status(400).json({ message: err.message || "Bad Request validation errors." });
+        res.status(400).json({ message: "Error creating student database entry." });
     }
 });
 
-// 3. UPDATE ROUTE FIX
-app.put('/api/students/:id', async (req, res) => {
+app.put('/api/students/:id', verifyToken, requireRole(['admin']), async (req, res) => {
     try {
-        const { name, rollNo, grade } = req.body;
-        const updated = await Student.findByIdAndUpdate(
-            req.params.id, 
-            { name, rollNo, grade }, 
-            { new: true, runValidators: true }
-        );
-        if (!updated) return res.status(404).json({ message: "Student record id target missing trace!" });
+        const updated = await Student.findByIdAndUpdate(req.params.id, req.body, { new: true });
         res.status(200).json(updated);
     } catch (err) {
-        res.status(400).json({ message: "Validation or format parameter mismatch execution errors." });
+        res.status(400).json({ message: "Failed updating database metrics." });
     }
 });
 
-// 4. DELETE ROUTE PIPELINE
-app.delete('/api/students/:id', async (req, res) => {
+app.delete('/api/students/:id', verifyToken, requireRole(['admin']), async (req, res) => {
     try {
         await Student.findByIdAndDelete(req.params.id);
         await Attendance.deleteMany({ studentId: req.params.id }); 
-        res.status(200).json({ message: "Cleared successfully!" });
+        res.status(200).json({ message: "Student record purged successfully." });
     } catch (err) {
-        res.status(500).json({ message: "Server Action Fail" });
+        res.status(500).json({ message: "Server action failed." });
     }
 });
 
 // ==========================================
-// 📅 ATTENDANCE LOGIC OPERATION METRICS ENDPOINTS
+// 📅 ATTENDANCE ENGINE (ADMIN ONLY)
 // ==========================================
 
-// MARK ATTENDANCE ACTION POST TRIGGER
-app.post('/api/attendance', async (req, res) => {
+app.post('/api/attendance', verifyToken, requireRole(['admin']), async (req, res) => {
     try {
         const { studentId, status, remarks } = req.body;
-        if(!studentId || !status) {
-            return res.status(400).json({ message: "Required variables status profile id target missing!" });
-        }
         const newLog = new Attendance({ studentId, status, remarks });
         await newLog.save();
         res.status(201).json(newLog);
     } catch (err) {
-        res.status(400).json({ message: "Attendance action payload execution crash." });
+        res.status(400).json({ message: "Failed logging attendance metadata entry." });
     }
 });
 
-// GET STUDENT ATTENDANCE LOG HISTORY
-app.get('/api/attendance/:studentId', async (req, res) => {
+app.get('/api/attendance/:studentId', verifyToken, requireRole(['admin']), async (req, res) => {
     try {
         const history = await Attendance.find({ studentId: req.params.studentId }).sort({ date: -1 });
         res.status(200).json(history);
     } catch (err) {
-        res.status(500).json({ message: "Log extraction error" });
+        res.status(500).json({ message: "Failed fetching student attendance history logs." });
     }
 });
 
-// Server Initialization
-const PORT = 5000;
-app.listen(PORT, () => console.log(`Server absolute operational network tracking line target runtime active on port: ${PORT}`));
+// ==========================================
+// 📝 ACADEMIC MARKS CONTROL (ADMIN / TEACHER MAPPING)
+// ==========================================
+
+// Add or update student marks
+app.post('/api/marks/add', verifyToken, requireRole(['admin']), async (req, res) => {
+    try {
+        const { studentRollNo, subject, examType, marksObtained, maxMarks, remarks } = req.body;
+        const newMark = new Mark({ studentRollNo, subject, examType, marksObtained, maxMarks, remarks });
+        await newMark.save();
+        res.status(201).json({ success: true, data: newMark });
+    } catch (err) {
+        res.status(400).json({ message: "Failed to upload grade metrics." });
+    }
+});
+
+// ==========================================
+// 💳 FINANCE & FEES MANAGEMENT (ADMIN ONLY)
+// ==========================================
+
+// Create a structural fee entry bill
+app.post('/api/fees/create', verifyToken, requireRole(['admin']), async (req, res) => {
+    try {
+        const { studentRollNo, termName, amountDue, amountPaid, status, dueDate } = req.body;
+        const newFee = new Fee({ studentRollNo, termName, amountDue, amountPaid, status, dueDate });
+        await newFee.save();
+        res.status(201).json({ success: true, data: newFee });
+    } catch (err) {
+        res.status(400).json({ message: "Failed to generate fee ledger invoice entry." });
+    }
+});
+
+// ==========================================
+// 👪 STUDENT & PARENT REAL-TIME VIEW GATEWAYS
+// ==========================================
+
+// Fetches structural profile data, attendance history, academic report cards, and balance statements
+app.get('/api/portal/dashboard/:rollNo', verifyToken, requireRole(['student', 'parent', 'admin']), async (req, res) => {
+    try {
+        // Security check: Students/Parents can only read data associated with their own studentRollNo
+        if (req.user.role !== 'admin' && req.user.studentRollNo !== req.params.rollNo) {
+            return res.status(403).json({ message: "Unauthorized dashboard view matching violation context." });
+        }
+
+        const studentProfile = await Student.findOne({ rollNo: req.params.rollNo });
+        if (!studentProfile) return res.status(404).json({ message: "Student record details missing." });
+
+        // Run parallel queries across all features mapped to this unique student
+        const attendanceLogs = await Attendance.find({ studentId: studentProfile._id }).sort({ date: -1 });
+        const academicMarks = await Mark.find({ studentRollNo: req.params.rollNo });
+        const financialFees = await Fee.find({ studentRollNo: req.params.rollNo });
+
+        res.status(200).json({
+            profile: studentProfile,
+            attendance: attendanceLogs,
+            marks: academicMarks,
+            fees: financialFees
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Error retrieving portal diagnostic summary matrices." });
+    }
+});
+
+// Server Launch Configuration
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server runtime seamlessly active on port: ${PORT}`));
