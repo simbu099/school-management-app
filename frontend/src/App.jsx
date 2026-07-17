@@ -154,10 +154,11 @@ function App() {
     setShowAttendanceModal(true);
   };
 
+  // FIXED: Changed studentId to student to map accurately with the Mongoose model
   const submitAttendance = async () => {
     try {
       await axios.post(`${BACKEND_URL}/api/attendance`, {
-        studentId: selectedStudent._id,
+        student: selectedStudent._id,
         status: attendanceStatus,
         remarks: String(attendanceRemarks || '').trim()
       }, getAuthConfig());
