@@ -25,8 +25,8 @@ function App() {
   const [attendanceHistory, setAttendanceHistory] = useState([]);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
 
-  // 🌍 PRODUCTION LIVE BACKEND URL
-  const BACKEND_URL = 'http://localhost:5000';
+  // 🌍 PRODUCTION LIVE BACKEND URL (FIXED TO CLOUD ENDPOINT)
+  const BACKEND_URL = 'https://school-management-app-ssvn.onrender.com';
 
   // 🛡️ Helper function to retrieve secure authorization config headers
   const getAuthConfig = () => {
