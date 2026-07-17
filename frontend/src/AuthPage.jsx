@@ -14,7 +14,7 @@ export default function AuthPage({ onLoginSuccess }) {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
-  // 🌍 Live Production Backend Link (Fixed from localhost)
+  // 🌍 Live Production Backend Link
   const BACKEND_URL = 'https://school-management-app-ssvn.onrender.com';
 
   const handleChange = (e) => {
@@ -34,13 +34,14 @@ export default function AuthPage({ onLoginSuccess }) {
         });
         onLoginSuccess(res.data.token, res.data.user);
       } else {
+        // Validation bypass: Admin-nu irundha empty schema validation text default string-ah pass pannuvom
         const signupData = {
           name: formData.name,
           phone: formData.phone,
           email: formData.email,
           password: formData.password,
           role: formData.role,
-          studentRollNo: formData.role !== 'admin' ? formData.studentRollNo : null
+          studentRollNo: formData.role === 'admin' ? 'ADMIN-BYPASS' : formData.studentRollNo
         };
 
         const res = await axios.post(`${BACKEND_URL}/api/auth/signup`, signupData);
@@ -114,7 +115,7 @@ export default function AuthPage({ onLoginSuccess }) {
                     placeholder="e.g. ROLL-007" 
                     value={formData.studentRollNo} 
                     onChange={handleChange} 
-                    required 
+                    required={formData.role !== 'admin'} 
                   />
                 </div>
               )}
