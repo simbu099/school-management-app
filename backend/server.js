@@ -10,10 +10,12 @@ const jwt = require('jsonwebtoken');
 const User = require('./models/User'); 
 const Student = require('./models/Student');
 const Attendance = require('./models/Attendance');
-
-// New Real-time Modules Models
 const Mark = require('./models/Mark');
 const Fee = require('./models/Fee');
+
+// New Extended Requirement Models
+const Complaint = require('./models/Complaint');
+const LeaveRequest = require('./models/LeaveRequest');
 
 const app = express();
 
@@ -155,7 +157,6 @@ app.put('/api/students/:id', verifyToken, requireRole(['admin']), async (req, re
 app.delete('/api/students/:id', verifyToken, requireRole(['admin']), async (req, res) => {
     try {
         await Student.findByIdAndDelete(req.params.id);
-        // FIXED: Dropping all matching records using 'student' instead of studentId
         await Attendance.deleteMany({ student: req.params.id }); 
         res.status(200).json({ message: "Student record purged successfully." });
     } catch (err) {
@@ -164,21 +165,18 @@ app.delete('/api/students/:id', verifyToken, requireRole(['admin']), async (req,
 });
 
 // ==========================================
-// 📅 ATTENDANCE ENGINE (ADMIN ONLY) - FIXED SCHEMA ALIGNMENT
+// 📅 ATTENDANCE ENGINE (ADMIN ONLY)
 // ==========================================
 
 app.post('/api/attendance', verifyToken, requireRole(['admin']), async (req, res) => {
     try {
-        // FIXED: Reading fields from frontend sync parameter tracking map block logic
         const { student, status, remarks } = req.body;
         
-        // Formulate clear clean tracking index to bypass composite timestamp variations
         const startOfDay = new Date();
         startOfDay.setHours(0,0,0,0);
         const endOfDay = new Date();
         endOfDay.setHours(23,59,59,999);
 
-        // Remove if duplicate exists on exact same tracking date window to avoid 400 unique clash index
         await Attendance.deleteMany({
             student: student,
             date: { $gte: startOfDay, $lte: endOfDay }
@@ -195,7 +193,6 @@ app.post('/api/attendance', verifyToken, requireRole(['admin']), async (req, res
 
 app.get('/api/attendance/:studentId', verifyToken, requireRole(['admin']), async (req, res) => {
     try {
-        // FIXED: Query updated from studentId object layer tracking map to student key
         const history = await Attendance.find({ student: req.params.studentId }).sort({ date: -1 });
         res.status(200).json(history);
     } catch (err) {
@@ -207,7 +204,6 @@ app.get('/api/attendance/:studentId', verifyToken, requireRole(['admin']), async
 // 📝 ACADEMIC MARKS CONTROL
 // ==========================================
 
-// FIXED: Added Global GET Endpoint for Admin Dashboard visibility
 app.get('/api/marks', verifyToken, requireRole(['admin']), async (req, res) => {
     try {
         const marksData = await Mark.find();
@@ -232,7 +228,6 @@ app.post('/api/marks/add', verifyToken, requireRole(['admin']), async (req, res)
 // 💳 FINANCE & FEES MANAGEMENT 
 // ==========================================
 
-// FIXED: Added Global GET Endpoint for Fees Admin View visibility
 app.get('/api/fees', verifyToken, requireRole(['admin']), async (req, res) => {
     try {
         const feesData = await Fee.find();
@@ -254,6 +249,55 @@ app.post('/api/fees/create', verifyToken, requireRole(['admin']), async (req, re
 });
 
 // ==========================================
+// 🚨 ADMIN PRIVATE COMPLAINTS (PARENTS ONLY)
+// ==========================================
+
+app.post('/api/complaints/add', verifyToken, requireRole(['admin']), async (req, res) => {
+    try {
+        const { studentRollNo, title, description, severity } = req.body;
+        const newComplaint = new Complaint({ studentRollNo, title, description, severity });
+        await newComplaint.save();
+        res.status(201).json({ success: true, message: "Private complaint logged for parents." });
+    } catch (err) {
+        res.status(400).json({ message: "Failed to log complaint." });
+    }
+});
+
+// ==========================================
+// 📩 LEAVE REQUEST SYSTEM (STUDENTS & ADMIN)
+// ==========================================
+
+app.post('/api/leave/apply', verifyToken, requireRole(['student']), async (req, res) => {
+    try {
+        const { studentRollNo, studentName, reason, startDate, endDate } = req.body;
+        const newLeave = new LeaveRequest({ studentRollNo, studentName, reason, startDate, endDate });
+        await newLeave.save();
+        res.status(201).json({ success: true, message: "Leave application submitted." });
+    } catch (err) {
+        res.status(400).json({ message: "Failed to submit leave request." });
+    }
+});
+
+app.get('/api/leave/all', verifyToken, requireRole(['admin']), async (req, res) => {
+    try {
+        const requests = await LeaveRequest.find().sort({ createdAt: -1 });
+        res.status(200).json(requests);
+    } catch (err) {
+        res.status(500).json({ message: "Error fetching leave requests." });
+    }
+});
+
+app.put('/api/leave/status/:id', verifyToken, requireRole(['admin']), async (req, res) => {
+    try {
+        const { status } = req.body;
+        const updated = await LeaveRequest.findByIdAndUpdate(req.params.id, { status }, { new: true });
+        res.status(200).json(updated);
+    } catch (err) {
+        res.status(400).json({ message: "Failed to update leave status." });
+    }
+});
+
+// ==========================================
 // 👪 STUDENT & PARENT REAL-TIME VIEW GATEWAYS
 // ==========================================
 
@@ -269,12 +313,21 @@ app.get('/api/portal/dashboard/:rollNo', verifyToken, requireRole(['student', 'p
         const attendanceLogs = await Attendance.find({ student: studentProfile._id }).sort({ date: -1 });
         const academicMarks = await Mark.find({ studentRollNo: req.params.rollNo });
         const financialFees = await Fee.find({ studentRollNo: req.params.rollNo });
+        const leaveRequests = await LeaveRequest.find({ studentRollNo: req.params.rollNo }).sort({ createdAt: -1 });
+
+        // 🔒 SECURITY PRIVACY FILTER: Complaints loaded strictly for Parent and Admin (Hidden from Student)
+        let complaintsData = [];
+        if (req.user.role === 'parent' || req.user.role === 'admin') {
+            complaintsData = await Complaint.find({ studentRollNo: req.params.rollNo }).sort({ date: -1 });
+        }
 
         res.status(200).json({
             profile: studentProfile,
             attendance: attendanceLogs,
             marks: academicMarks,
-            fees: financialFees
+            fees: financialFees,
+            leaves: leaveRequests,
+            complaints: complaintsData // Student login-la array empty-ah thaan varum
         });
     } catch (err) {
         res.status(500).json({ message: "Error retrieving portal diagnostic summary matrices." });
